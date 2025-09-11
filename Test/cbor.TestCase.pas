@@ -163,6 +163,8 @@ type
     procedure Test_Special_64BitFloat_6;
     procedure Test_Special_64BitFloat_7;
     procedure Test_Special_64BitFloat_8;
+
+    procedure Test_AttestationObject_FromBase64Url;
   end;
 
 implementation
@@ -170,7 +172,7 @@ implementation
 uses
   Winapi.Windows, System.Generics.Collections, System.Math, System.SysUtils, System.Variants,
   Data.FMTBcd,
-  cbor;
+  cbor, System.NetEncoding;
 
 procedure TTestCase_cbor.Test_SemanticString_0;
 begin
@@ -1491,6 +1493,67 @@ begin
   c.Next;
 
   CheckException(procedure begin var ans := c.AsArray; end, Exception, 'Out of bytes to decode.');
+end;
+
+procedure TTestCase_cbor.Test_AttestationObject_FromBase64Url;
+const c_AttestationObjectBase64Url = 'o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVikja9ISJeFumzVCm3u5Q7HEOy8jQyBuMYHWl0YzEQ8ZXFFAAAAAAAAAAAAAAAAAAAAAAAAAAAAIGPWXFDTzQ5rOZwYOblGlfoIDWS__iLPjGKwxJk6PiF6pQECAyYgASFYIA_fJFYfwbdytl7kAHbLUiu025OikNUPuYl5RsSKKWzaIlggPi0ybh69YWBLK66ilWcLgz93RlBpxh87am4439Qr5IA';
+      rc_WebAuthnInvalidAttestationObject = '[%s] Invalid credential.response.attestationObject.';
+begin
+  var B := TNetEncoding.Base64URL.DecodeStringToBytes(c_AttestationObjectBase64Url);
+  var c: TCbor := B;
+  if not C.Next or (C.DataType <> cborMap) then
+    raise Exception.Create(Format(rc_WebAuthnInvalidAttestationObject, ['map']));
+
+  var C1 := C.AsMap;
+  if not C1.ContainsKey('fmt') then
+    raise Exception.Create(Format(rc_WebAuthnInvalidAttestationObject, ['fmt']));
+
+  var sFmt : string := C1.ValueByKey('fmt');
+  Status('fmt: ' + sFmt);
+
+  if not C1.ContainsKey('authData') then
+    raise Exception.Create(Format(rc_WebAuthnInvalidAttestationObject, ['authData']));
+
+  B := C1.ValueByKey('authData').Payload;
+  Status('authData: ' + TNetEncoding.Base64.EncodeBytesToString(B));
+
+  var B1: TBytes;
+  SetLength(B1, 32);
+  Move(B[0], B1[0], Length(B1));
+  var sRPIDHash := TNetEncoding.Base64URL.EncodeBytesToString(B1);
+  Status('rpidHash: ' + sRPIDHash);
+
+  var bFlags := B[32];
+
+  B1 := [];
+  SetLength(B1, 16);
+  Move(B[37], B1[0], Length(B1));
+  var sAAGUID := TNetEncoding.Base64URL.EncodeBytesToString(B1);
+  Status('aaguid: ' + sAAGUID);
+
+  var iLen: Word := B[53] shl 8 or B[54];
+  B1 := [];
+  SetLength(B1, iLen);
+  Move(B[55], B1[0], iLen);
+  var sCredId := TNetEncoding.Base64URL.EncodeBytesToString(B1);
+  Status('credid: ' + sCredId);
+
+  var iStart := iLen + 55;
+  iLen := Length(B) - iStart;
+  B1 := [];
+  SetLength(B1, iLen);
+  Move(B[iStart], B1[0], iLen);
+
+  C := B1;
+  if not C.Next then
+    raise Exception.Create(Format(rc_WebAuthnInvalidAttestationObject, ['CredPublicKey Empty']));
+  if C.DataType <> cborMap then
+    raise Exception.Create(Format(rc_WebAuthnInvalidAttestationObject, ['CredPublicKey Invalid Type']));
+
+  C1 := C.AsMap;
+  var iKty := C1.ValueByKey(1);
+  var iAlg := C1.ValueByKey(3);
+  {$endregion}
 end;
 
 procedure TTestCase_cbor.Test_Map_0;
